@@ -6,7 +6,7 @@ from src.tools.agent_skills import (
     profile_metric,
     select_stat_criterion,
     calculate_ab_test,
-    interpret_results
+    interpret_results, knowledge_base
 )
 
 # Тесты для generate_basic_sql
@@ -145,3 +145,47 @@ def test_interpret_results_error(mock_chat):
 
     with pytest.raises(KeyError):
         interpret_results(bad_test_res)
+
+
+#knowledge_base
+@patch("src.tools.agent_skills.search_milvus")
+def test_knowledge_base_normal(mock_search_milvus):
+    mock_search_milvus.return_value = [
+        {"H1": "Аналитика", "H2": "Линеаризация", "text": "Дельта-метод для ratio метрик."},
+        {"H1": "Статистика", "text": "Описание дисперсии."}
+    ]
+
+    result = knowledge_base(query="delta method", page="Линеаризация")
+
+    assert "[Аналитика > Линеаризация] Дельта-метод для ratio метрик." in result
+    assert "[Статистика] Описание дисперсии." in result
+
+    mock_search_milvus.assert_called_once()
+    call_args = mock_search_milvus.call_args[0]
+    assert call_args[0] == "lines"
+    assert call_args[1] == "delta method"
+    assert call_args[2] == 5
+    assert 'metadata["H1"] like "%Линеаризация%"' in call_args[3]
+
+
+@patch("src.tools.agent_skills.search_milvus")
+def test_knowledge_base_empty(mock_search_milvus):
+    mock_search_milvus.return_value = []
+
+    result = knowledge_base(query="unknown abstract query")
+
+    assert result == "nothing found"
+
+    call_args = mock_search_milvus.call_args[0]
+    assert call_args[3] == ""
+
+
+@patch("src.tools.agent_skills.search_milvus")
+def test_knowledge_base_error(mock_search_milvus):
+    bad_hits = [
+        {"H1": "Аналитика", "H2": "CUPED"}
+    ]
+    mock_search_milvus.return_value = bad_hits
+
+    with pytest.raises(KeyError):
+        knowledge_base(query="cuped variance reduction")

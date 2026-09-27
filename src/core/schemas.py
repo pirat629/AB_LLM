@@ -14,3 +14,6 @@ class Run:
 class Answer(BaseModel):
     reasoning: str = Field(description="ход решения в два-три предложения")
     final: Union[str, int, float] = Field(description="только итоговый ответ: число или короткая фраза")
+
+class Facts(BaseModel):
+    facts: list[str] = Field(description="короткие факты о пользователе")

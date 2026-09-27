@@ -7,6 +7,7 @@ from src.core.registry import register
 
 from src.core.llm import chat
 from src.config import MODELS
+from src.core.vectorstore import search_milvus
 
 
 class GenerateBasicSQLArgs(BaseModel):
@@ -153,3 +154,15 @@ def interpret_results(test_results: dict, mde_pct: float = None) -> str:
     return response['content']
 
 register(interpret_results, InterpretResultsArgs, "Формулировка итоговых рекомендаций")
+
+class KBArgs(BaseModel):
+    query: str = Field(description="Подробный, семантически полный поисковой запрос. Лучше всего передавать переформулированный вопрос пользователя целиком, не сокращая его до ключевых слов.")
+    page: str = Field(default="", description="ОПАСНО: Оставляй пустым в 99% случаев! Заполняй только если пользователь ЯВНО просит искать в конкретной статье (например, «Посмотри в статье CUPED»). Регистр имеет значение.")
+
+def knowledge_base(query: str, page: str = "") -> str:
+    hits = search_milvus("lines", query, 5, f'metadata["H1"] like "%{page}%" or metadata["source_file"] like "%{page}%"' if page else "")
+    if not hits:
+        return "Ничего не найдено"
+    return "\n".join(f"[{' > '.join(h[f'H{i}'] for i in range(1, 10) if f'H{i}' in h)}] {h['text']}" for h in hits)
+
+register(knowledge_base, KBArgs, "КРИТИЧЕСКИ ВАЖНО: Всегда используй этот инструмент для поиска фактической информации, формул и теории по аналитике. Возвращает 5 релевантных фактов. Не полагайся на свою память.")

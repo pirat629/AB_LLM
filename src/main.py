@@ -1,20 +1,51 @@
-from src.config import MODELS
-from src.core.agent import agent
+import uuid
+from src.core.vectorstore import load_cache, save_cache
+from src.core.agent import talk, end_session
 from src.core.ledger import ledger
-from src.utils.trace import show_trace
-import src.tools.agent_skills
-from src.core.registry import TOOLS
+
+def main():
+    print("Инициализация ИИ-агента...")
+
+    cached_vectors = load_cache()
+    print(f"Кэш загружен (векторов: {cached_vectors})")
+
+    session = str(uuid.uuid4())
+    history = []
+
+    print("Агент готов к работе (введите 'exit' или 'выход' для завершения)\n")
+    print("-" * 50)
+
+    try:
+        while True:
+            user_text = input("Вы: ").strip()
+
+            if not user_text:
+                continue
+
+            if user_text.lower() in ["exit", "выход", "quit"]:
+                break
+
+            answer = talk(session, history, user_text, mode="память")
+            print(f"\nАгент: {answer}\n")
+            print("-" * 50)
+
+    finally:
+        print("\nЗавершение сессии...")
+
+        if history:
+            print("Анализ диалога и извлечение новых фактов...")
+            end_session(history)
+
+        print("Сохранение кэша векторов на диск...")
+        save_cache()
+
+        print("\nСтатистика затрат на LLM:")
+        try:
+            print(ledger.table())
+            print(f"\nИтого потрачено за сессию: ${ledger.mine:.4f}")
+        except Exception as e:
+            print(f"Нет данных по затратам или ошибка группировки: {e}")
+
 
 if __name__ == "__main__":
-    question = "Посчитай A/B тест метрики выручки для групп A (100, 105, 102) и B (110, 115, 112), используя критерий Фишера. Ответь одним словом (Да или нет) стоит ли раскатывать метрики"
-
-    run = agent(
-        question=question,
-        model=MODELS["cheap"],
-        tool_names=list(TOOLS.keys()),
-    )
-
-    show_trace(run)
-    print("\nФинальный ответ:", run.answer)
-    print("\n--- Затраты ---")
-    print(ledger.table())
+    main()

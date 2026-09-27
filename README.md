@@ -7,6 +7,7 @@ python -m pytest -m "not golden" -v
 ```bash
 python -m pytest -m "golden" -v -s
 ```
+для запуска голден запросов требуется ввести ключ от openRouter в .env
 
 **Скиллы**
 

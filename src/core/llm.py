@@ -3,9 +3,9 @@ import requests
 from src.config import CHAT_URL, HEADERS
 from src.core.ledger import ledger
 
-def post_with_retry(body, attempts=3, delay=5):
+def post_with_retry(body, url=CHAT_URL, attempts=3,delay=5):
     for attempt in range(attempts):
-        response = requests.post(CHAT_URL, json=body, headers=HEADERS, timeout=120)
+        response = requests.post(url, json=body, headers=HEADERS, timeout=120)
         if response.status_code == 200:
             return response.json()
         if response.status_code in (429, 500, 502, 503) and attempt < attempts - 1:

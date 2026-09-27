@@ -4,10 +4,13 @@ import time
 from typing import Type
 from pydantic import BaseModel
 
+from src.config import ASSISTANT_SYSTEM, MODELS
+from src.core.memory import remember_episode, recall_facts, store_facts, extract_facts, known_facts
 from src.core.schemas import Run, Answer
 from src.core.registry import TOOLS
 from src.core.ledger import ledger
 from src.core.llm import chat
+from src.core.vectorstore import search_milvus
 
 SYSTEM = ("Ты решаешь задачи. Если нужно посчитать или найти факт, вызывай инструменты, а не угадывай. "
           "Когда ответ готов, напиши его строго одним JSON-объектом по этой схеме, без текста вокруг:\n{template}\n"
@@ -80,3 +83,35 @@ def agent(question, model, tool_names, max_steps=8, schema: Type[BaseModel] = An
     answer, steps = agent_loop(messages, model, tool_names, max_steps)
 
     return Run(question, answer, steps, messages, ledger.total - before, time.perf_counter() - started)
+
+def rrf(rankings, k=5, K=60):
+    scores = {}
+    for ranking in rankings:
+        for rank, idx in enumerate(ranking):
+            scores[idx] = scores.get(idx, 0.0) + 1 / (K + rank + 1)
+
+    return sorted(scores, key=scores.get, reverse=True)[:k]
+
+def search_with_memory(user_text, facts, k=5):
+    plain = search_milvus("lines", user_text, k)
+    personal = search_milvus("lines", user_text + " " + " ".join(facts), k) if facts else []
+    by_id = {h["id"]: h for h in plain + personal}
+    return [by_id[i] for i in rrf([[h["id"] for h in plain], [h["id"] for h in personal]], k)]
+
+def talk(session, history, user_text, mode="память"):
+    remember_episode(session, "user", user_text)
+    facts = recall_facts(user_text) if mode == "память" else []
+    system = ASSISTANT_SYSTEM + ("\nЧто известно о пользователе: " + "; ".join(facts) if facts else "")
+    window = history[-4:] if mode == "память" else history
+    msg = chat([{"role": "system", "content": system}] + window + [{"role": "user", "content": user_text}],
+               MODELS["cheap"], tag=f"dialog: {mode}")
+    answer = msg.get("content") or ""
+    history += [{"role": "user", "content": user_text}, {"role": "assistant", "content": answer}]
+    remember_episode(session, "assistant", answer)
+
+    return answer
+
+def end_session(history):
+    dialog = "\n".join(f"{m['role']}: {m['content'][:400]}" for m in history)
+    store_facts(extract_facts(dialog, known_facts()))
+    return known_facts()
